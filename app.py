@@ -11,6 +11,7 @@ import csv
 import os
 import logging
 import asyncio
+import aiohttp
 
 # --- Настройка ---
 logging.basicConfig(level=logging.INFO)
@@ -24,7 +25,6 @@ router = Router()
 DATA_DIR = "/data"
 os.makedirs(DATA_DIR, exist_ok=True)
 CSV_FILE = os.path.join(DATA_DIR, "repair_requests.csv")
-
 if not os.path.exists(CSV_FILE):
     with open(CSV_FILE, 'w', encoding='utf-8', newline='') as f:
         csv.writer(f).writerow(["Имя", "Телефон", "Тип устройства", "Описание проблемы", "Предпочитаемое время"])
@@ -114,11 +114,17 @@ async def get_preferred_time(message: Message, state: FSMContext):
 @router.message(RepairRequest.confirm, F.text == "Да")
 async def confirm_yes(message: Message, state: FSMContext):
     data = await state.get_data()
-    with OIpen(CSV_FILE, 'a', encoding='utf-8', newline='') as f:
-        csv.writer(f).writerow([data['name'], data['phone'], data['device_type'], data['problem_description'], data['preferred_time']])
+    with open(CSV_FILE, 'a', encoding='utf-8', newline='') as f:  # ИСПРАВЛЕНО: open, не OIpen
+        csv.writer(f).writerow([
+            data['name'], data['phone'], data['device_type'],
+            data['problem_description'], data['preferred_time']
+        ])
     await message.answer("Заявка сохранена! Мы свяжемся с вами.", reply_markup=main_keyboard)
     if ADMIN_ID:
-        await bot.send_message(ADMIN_ID, f"Новая заявка!\n\n" + "\n".join(f"{k}: {v}" for k, v in data.items()))
+        try:
+            await bot.send_message(ADMIN_ID, f"Новая заявка!\n\n" + "\n".join(f"{k}: {v}" for k, v in data.items()))
+        except Exception as e:
+            logging.error(f"Не удалось отправить админу: {e}")
     await state.clear()
 
 @router.message(RepairRequest.confirm, F.text == "Нет")
@@ -136,23 +142,33 @@ async def export_csv(message: Message):
         return
     await message.answer_document(FSInputFile(CSV_FILE), caption="Все заявки")
 
-# --- Webhook ---
+# --- Умная установка вебхука с повторами ---
+async def set_webhook_with_retry(domain: str, max_retries: int = 5, delay: int = 10):
+    webhook_url = f"https://{domain}/webhook"
+    for attempt in range(max_retries):
+        try:
+            await bot.set_webhook(webhook_url)
+            logging.info(f"WEBHOOK УСПЕШНО: {webhook_url}")
+            return True
+        except Exception as e:
+            logging.warning(f"Попытка {attempt + 1}/{max_retries} установки вебхука не удалась: {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(delay)
+    logging.error(f"НЕ УДАЛОСЬ установить вебхук после {max_retries} попыток")
+    return False
+
+# --- on_startup с умной задержкой ---
 async def on_startup(app: web.Application):
-    domain = config('AMVERA_APP_DOMAIN')
+    domain = config('AMVERA_APP_DOMAIN', default=None)
     if not domain or domain == "localhost":
-        logging.error("AMVERA_APP_DOMAIN НЕ ЗАДАН!")
+        logging.error("AMVERA_APP_DOMAIN НЕ ЗАДАН! Вебхук не будет установлен.")
         return
 
     logging.info(f"ДОМЕН: {domain}")
-    logging.info("Ожидание 300 секунд — Amvera просыпается...")
-    await asyncio.sleep(300)  # 5 МИНУТ
+    logging.info("Ожидание 30 секунд — Amvera просыпается и DNS обновляется...")
+    await asyncio.sleep(30)  # 30 сек вместо 300 — достаточно
 
-    webhook_url = f"https://{domain}/webhook"
-    try:
-        await bot.set_webhook(webhook_url)
-        logging.info(f"WEBHOOK УСПЕШНО: {webhook_url}")
-    except Exception as e:
-        logging.error(f"ОШИБКА ВЕБХУКА: {e}")
+    await set_webhook_with_retry(domain)
 
 # --- Запуск ---
 app = web.Application()
@@ -160,7 +176,6 @@ SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
 setup_application(app, dp, bot=bot)
 dp.include_router(router)
 app.on_startup.append(on_startup)
-# УДАЛЕНА СТРОКА: app.on_shutdown.append(on_shutdown)  ← ЭТО БЫЛО ПРИЧИНОЙ!
 
 if __name__ == "__main__":
     web.run_app(app, host="0.0.0.0", port=8000)
