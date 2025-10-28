@@ -11,7 +11,6 @@ import csv
 import os
 import logging
 import asyncio
-import aiohttp
 
 # --- Настройка ---
 logging.basicConfig(level=logging.INFO)
@@ -114,7 +113,7 @@ async def get_preferred_time(message: Message, state: FSMContext):
 @router.message(RepairRequest.confirm, F.text == "Да")
 async def confirm_yes(message: Message, state: FSMContext):
     data = await state.get_data()
-    with open(CSV_FILE, 'a', encoding='utf-8', newline='') as f:  # ИСПРАВЛЕНО: open, не OIpen
+    with open(CSV_FILE, 'a', encoding='utf-8', newline='') as f:
         csv.writer(f).writerow([
             data['name'], data['phone'], data['device_type'],
             data['problem_description'], data['preferred_time']
@@ -142,7 +141,58 @@ async def cmd_get_csv(message: Message):
         return
     await message.answer_document(FSInputFile(CSV_FILE), caption="Все заявки")
 
-# --- Умная установка вебхука с повторами ---
+# --- ЭХО-БОТ ---
+@router.message()
+async def echo(message: Message):
+    await message.answer(f"Ваше сообщение: {message.text}")
+
+# --- ВЕБ-ПАНЕЛЬ ---
+async def show_requests(request):
+    if not os.path.exists(CSV_FILE):
+        return web.Response(text="<h2>Нет заявок</h2>", content_type="text/html")
+    
+    with open(CSV_FILE, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        rows = list(reader)
+    
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Админ-панель | Ремонт</title>
+        <meta charset="utf-8">
+        <style>
+            body {font-family: Arial; margin: 40px; background: #f4f4f4;}
+            h2 {color: #2c3e50;}
+            table {width: 100%; border-collapse: collapse; margin: 20px 0;}
+            th, td {border: 1px solid #ddd; padding: 12px; text-align: left;}
+            th {background: #3498db; color: white;}
+            tr:nth-child(even) {background: #f9f9f9;}
+            .btn {padding: 10px 20px; background: #27ae60; color: white; text-decoration: none; border-radius: 5px; display: inline-block; margin: 10px 0;}
+        </style>
+    </head>
+    <body>
+        <h2>Заявки на ремонт</h2>
+        <a href="/download_csv" class="btn">Скачать CSV</a>
+        <table>
+    """
+    # Заголовки
+    html += "<tr>" + "".join(f"<th>{h}</th>" for h in rows[0]) + "</tr>"
+    # Строки
+    for row in rows[1:]:
+        html += "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>"
+    html += "</table></body></html>"
+    return web.Response(text=html, content_type="text/html")
+
+async def download_csv(request):
+    if not os.path.exists(CSV_FILE):
+        return web.Response(text="Нет заявок", status=404)
+    return web.FileResponse(
+        CSV_FILE,
+        headers={"Content-Disposition": "attachment; filename=repair_requests.csv"}
+    )
+
+# --- Умная установка вебхука ---
 async def set_webhook_with_retry(domain: str, max_retries: int = 5, delay: int = 10):
     webhook_url = f"https://{domain}/webhook"
     for attempt in range(max_retries):
@@ -157,29 +207,29 @@ async def set_webhook_with_retry(domain: str, max_retries: int = 5, delay: int =
     logging.error(f"НЕ УДАЛОСЬ установить вебхук после {max_retries} попыток")
     return False
 
-# --- on_startup с умной задержкой ---
+# --- on_startup ---
 async def on_startup(app: web.Application):
     domain = config('AMVERA_APP_DOMAIN', default=None)
     if not domain or domain == "localhost":
         logging.error("AMVERA_APP_DOMAIN НЕ ЗАДАН! Вебхук не будет установлен.")
         return
-
     logging.info(f"ДОМЕН: {domain}")
     logging.info("Ожидание 30 секунд — Amvera просыпается и DNS обновляется...")
-    await asyncio.sleep(30)  # 30 сек вместо 300 — достаточно
-
+    await asyncio.sleep(30)
     await set_webhook_with_retry(domain)
 
 # --- Запуск ---
 app = web.Application()
+
+# Веб-роуты
+app.router.add_get("/", show_requests)
+app.router.add_get("/download_csv", download_csv)
+
+# Вебхук
 SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
 setup_application(app, dp, bot=bot)
 dp.include_router(router)
 app.on_startup.append(on_startup)
-
-@router.message()
-async def echo(message: Message):
-    await message.answer(f"Ваше сообщение: {message.text}")
 
 if __name__ == "__main__":
     web.run_app(app, host="0.0.0.0", port=8000)
