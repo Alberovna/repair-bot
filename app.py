@@ -17,24 +17,33 @@ import asyncio
 import re
 from datetime import datetime
 
-# --- Настройка ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# ----------------------------------------------------------------------
+# Настройка
+# ----------------------------------------------------------------------
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 BOT_TOKEN = config("BOT_TOKEN")
 ADMIN_ID = config("ADMIN_ID", default=None, cast=int)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
 
-# --- CSV ---
+# ----------------------------------------------------------------------
+# CSV-файл с заявками
+# ----------------------------------------------------------------------
 DATA_DIR = "/data"
 os.makedirs(DATA_DIR, exist_ok=True)
 CSV_FILE = os.path.join(DATA_DIR, "repair_requests.csv")
 
 if not os.path.exists(CSV_FILE):
     with open(CSV_FILE, 'w', encoding='utf-8', newline='') as f:
-        csv.writer(f).writerow(["ID", "Имя", "Телефон", "Устройство", "Проблема", "Время", "Дата создания"])
+        csv.writer(f).writerow(
+            ["ID", "Имя", "Телефон", "Устройство", "Проблема", "Время", "Дата создания"]
+        )
 
-# --- Клавиатуры ---
+# ----------------------------------------------------------------------
+# Клавиатуры
+# ----------------------------------------------------------------------
 main_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Заявка на ремонт"), KeyboardButton(text="Контакты")],
@@ -46,10 +55,13 @@ main_keyboard = ReplyKeyboardMarkup(
 
 confirm_keyboard = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="Да"), KeyboardButton(text="Нет")]],
-    resize_keyboard=True, one_time_keyboard=True
+    resize_keyboard=True,
+    one_time_keyboard=True
 )
 
-# --- FSM ---
+# ----------------------------------------------------------------------
+# FSM-состояния
+# ----------------------------------------------------------------------
 class RepairRequest(StatesGroup):
     name = State()
     phone = State()
@@ -58,58 +70,62 @@ class RepairRequest(StatesGroup):
     preferred_time = State()
     confirm = State()
 
-# --- Глобальные данные ---
+# ----------------------------------------------------------------------
+# Глобальные переменные
+# ----------------------------------------------------------------------
 request_counter = 0
-requests_data = {}
-LOGIN_URL = "https://t.me/твой_бот?start=login"
+requests_data: dict[int, list[str]] = {}
+LOGIN_URL = "https://t.me/твой_бот?start=login"   # fallback
 
-# --- Загрузка заявок ---
-def load_requests():
+# ----------------------------------------------------------------------
+# Загрузка заявок из CSV
+# ----------------------------------------------------------------------
+def load_requests() -> None:
     global request_counter, requests_data
     requests_data.clear()
     if os.path.exists(CSV_FILE):
         with open(CSV_FILE, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
-            next(reader, None)
+            next(reader, None)                     # пропуск заголовка
             for row in reader:
                 if len(row) >= 6 and row[0].isdigit():
-                    req_id = int(row[0])
-                    requests_data[req_id] = row[1:6]
-                    request_counter = max(request_counter, req_id)
+                    rid = int(row[0])
+                    requests_data[rid] = row[1:6]
+                    request_counter = max(request_counter, rid)
     request_counter = max(requests_data.keys(), default=0)
 
 load_requests()
 
-# --- Валидация телефона ---
+# ----------------------------------------------------------------------
+# Валидация телефона
+# ----------------------------------------------------------------------
 def is_valid_phone(phone: str) -> bool:
     cleaned = re.sub(r"[^\d+]", "", phone)
     return bool(re.fullmatch(r"\+?\d{10,15}", cleaned)) and len(cleaned.lstrip('+')) >= 10
 
-# --- Перезапись CSV ---
-def _rewrite_csv():
-    with open(CSV_FILE, 'w', encoding='utf-8', newline='') as f:
-        writer = csv.writer(f)
+# ----------------------------------------------------------------------
+# Перезапись CSV (используется при удалении)
+# ----------------------------------------------------------------------
+def _rewrite_csv() -> None:
+    tmp_file = CSV_FILE + ".tmp"
+    with open(tmp_file, 'w', encoding='utf-8', newline='') as tf:
+        writer = csv.writer(tf)
         writer.writerow(["ID", "Имя", "Телефон", "Устройство", "Проблема", "Время", "Дата создания"])
-        temp_file = CSV_FILE + ".tmp"
-        if os.path.exists(temp_file):
-            os.remove(temp_file)
-        with open(temp_file, 'w', encoding='utf-8', newline='') as tf:
-            tw = csv.writer(tf)
-            tw.writerow(["ID", "Имя", "Телефон", "Устройство", "Проблема", "Время", "Дата создания"])
-            for rid, data in sorted(requests_data.items()):
-                # Ищем дату из старого файла
-                found = False
+        for rid, data in sorted(requests_data.items()):
+            # ищем дату создания в текущем файле
+            created = "Неизвестно"
+            if os.path.exists(CSV_FILE):
                 with open(CSV_FILE, 'r', encoding='utf-8') as rf:
                     for row in csv.reader(rf):
                         if row and len(row) >= 7 and row[0] == str(rid):
-                            tw.writerow([rid] + data + [row[6]])
-                            found = True
+                            created = row[6]
                             break
-                if not found:
-                    tw.writerow([rid] + data + [datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
-        os.replace(temp_file, CSV_FILE)
+            writer.writerow([rid] + data + [created])
+    os.replace(tmp_file, CSV_FILE)
 
-# --- Хендлеры ---
+# ----------------------------------------------------------------------
+# Хендлеры
+# ----------------------------------------------------------------------
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     args = message.text.strip().split(maxsplit=1)
@@ -152,6 +168,7 @@ async def echo_mode(message: Message):
         return
     await message.answer("Эхо-режим включён. Отправьте сообщение — я повторю.", reply_markup=main_keyboard)
 
+# ------------------- FSM -------------------
 @router.message(RepairRequest.name)
 async def get_name(message: Message, state: FSMContext):
     name = message.text.strip()
@@ -159,38 +176,48 @@ async def get_name(message: Message, state: FSMContext):
         await message.answer("Имя слишком короткое. Попробуйте снова:")
         return
     await state.update_data(name=name)
-    await message.answer("**Отлично!**\n\nВведите ваш **номер телефона**:\n\n"
-                         "Формат: `+79123456789` или `89123456789`")
+    await message.answer(
+        "**Отлично!**\n\nВведите ваш **номер телефона**:\n\n"
+        "Формат: `+79123456789` или `89123456789`"
+    )
     await state.set_state(RepairRequest.phone)
 
 @router.message(RepairRequest.phone)
 async def get_phone(message: Message, state: FSMContext):
     phone = message.text.strip()
     if not is_valid_phone(phone):
-        await message.answer("**Неверный формат!**\n\nПримеры:\n`+79123456789`\n`89123456789`")
+        await message.answer(
+            "**Неверный формат!**\n\nПримеры:\n`+79123456789`\n`89123456789`"
+        )
         return
     await state.update_data(phone=phone)
-    await message.answer("**Какое устройство нужно починить?**\n\n"
-                         "Например: *смартфон Samsung*, *ноутбук Lenovo*")
+    await message.answer(
+        "**Какое устройство нужно починить?**\n\n"
+        "Например: *смартфон Samsung*, *ноутбук Lenovo*"
+    )
     await state.set_state(RepairRequest.device_type)
 
 @router.message(RepairRequest.device_type)
 async def get_device_type(message: Message, state: FSMContext):
     await state.update_data(device_type=message.text.strip())
-    await message.answer("**Опишите проблему подробно:**\n\n"
-                         "Например:\n"
-                         "• Не включается\n"
-                         "• Разбит экран\n"
-                         "• Не заряжается")
+    await message.answer(
+        "**Опишите проблему подробно:**\n\n"
+        "Например:\n"
+        "• Не включается\n"
+        "• Разбит экран\n"
+        "• Не заряжается"
+    )
     await state.set_state(RepairRequest.problem_description)
 
 @router.message(RepairRequest.problem_description)
 async def get_problem_description(message: Message, state: FSMContext):
     await state.update_data(problem_description=message.text.strip())
-    await message.answer("**Когда вам удобно принять звонок?**\n\n"
-                         "Например:\n"
-                         "• Завтра после 14:00\n"
-                         "• Вечером в будни")
+    await message.answer(
+        "**Когда вам удобно принять звонок?**\n\n"
+        "Например:\n"
+        "• Завтра после 14:00\n"
+        "• Вечером в будни"
+    )
     await state.set_state(RepairRequest.preferred_time)
 
 @router.message(RepairRequest.preferred_time)
@@ -215,8 +242,11 @@ async def confirm_yes(message: Message, state: FSMContext):
     data = await state.get_data()
     request_counter += 1
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    row = [request_counter, data['name'], data['phone'], data['device_type'],
-           data['problem_description'], data['preferred_time'], created_at]
+    row = [
+        request_counter, data['name'], data['phone'],
+        data['device_type'], data['problem_description'],
+        data['preferred_time'], created_at
+    ]
     requests_data[request_counter] = row[1:6]
 
     with open(CSV_FILE, 'a', encoding='utf-8', newline='') as f:
@@ -245,10 +275,13 @@ async def confirm_yes(message: Message, state: FSMContext):
 
 @router.message(RepairRequest.confirm, F.text == "Нет")
 async def confirm_no(message: Message, state: FSMContext):
-    await message.answer("**Хорошо, давайте исправим!**\n\n**Как вас зовут?**", reply_markup=ReplyKeyboardRemove())
+    await message.answer(
+        "**Хорошо, давайте исправим!**\n\n**Как вас зовут?**",
+        reply_markup=ReplyKeyboardRemove()
+    )
     await state.set_state(RepairRequest.name)
 
-# --- Админ-панель ---
+# ------------------- Админ-панель -------------------
 @router.message(Command("admin"))
 async def cmd_admin(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -258,48 +291,53 @@ async def cmd_admin(message: Message):
         await message.answer("Нет заявок", reply_markup=main_keyboard)
         return
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
-    for req_id, data in sorted(requests_data.items()):
-        keyboard.inline_keyboard.append([
-            InlineKeyboardButton(text=f"#{req_id} {data[0]}", callback_data=f"view_{req_id}"),
-            InlineKeyboardButton(text="Удалить", callback_data=f"delete_{req_id}")
+    kb = InlineKeyboardMarkup(inline_keyboard=[])
+    for rid, data in sorted(requests_data.items()):
+        kb.inline_keyboard.append([
+            InlineKeyboardButton(text=f"#{rid} {data[0]}", callback_data=f"view_{rid}"),
+            InlineKeyboardButton(text="Удалить", callback_data=f"delete_{rid}")
         ])
-    await message.answer("**Админ-панель:**", reply_markup=keyboard)
+    await message.answer("**Админ-панель:**", reply_markup=kb)
 
 @router.callback_query(F.data.startswith("view_"))
 async def view_request(callback: CallbackQuery):
-    req_id = int(callback.data.split("_")[1])
-    data = requests_data.get(req_id)
+    rid = int(callback.data.split("_")[1])
+    data = requests_data.get(rid)
     if not data:
         await callback.answer("Заявка не найдена", show_alert=True)
         return
-    with open(CSV_FILE, 'r', encoding='utf-8') as f:
-        for row in csv.reader(f):
-            if row and len(row) >= 7 and row[0] == str(req_id):
-                created_at = row[6]
-                break
-        else:
-            created_at = "Неизвестно"
+
+    created = "Неизвестно"
+    if os.path.exists(CSV_FILE):
+        with open(CSV_FILE, 'r', encoding='utf-8') as f:
+            for row in csv.reader(f):
+                if row and len(row) >= 7 and row[0] == str(rid):
+                    created = row[6]
+                    break
+
     text = (
-        f"**Заявка #{req_id}**\n\n"
+        f"**Заявка #{rid}**\n\n"
         f"**Имя:** {data[0]}\n"
         f"**Телефон:** `{data[1]}`\n"
         f"**Устройство:** {data[2]}\n"
         f"**Проблема:** {data[3]}\n"
         f"**Время:** {data[4]}\n"
-        f"**Создано:** {created_at}"
+        f"**Создано:** {created}"
     )
     await callback.message.answer(text)
     await callback.answer()
 
 @router.callback_query(F.data.startswith("delete_"))
 async def delete_request(callback: CallbackQuery):
-    req_id = int(callback.data.split("_")[1])
-    if req_id in requests_data:
-        del requests_data[req_id]
+    rid = int(callback.data.split("_")[1])
+    if rid in requests_data:
+        del requests_data[rid]
         _rewrite_csv()
-        await callback.message.edit_text(f"**Заявка #{req_id} удалена**", reply_markup=None)
-        await cmd_admin(callback.message)
+        await callback.message.edit_text(
+            f"**Заявка #{rid} удалена**",
+            reply_markup=None
+        )
+        await cmd_admin(callback.message)   # обновляем панель
     else:
         await callback.answer("Заявка не найдена", show_alert=True)
 
@@ -315,8 +353,8 @@ async def cmd_get_csv(message: Message):
         file = BufferedInputFile(f.read(), filename="repair_requests.csv")
     await message.answer_document(file, caption="Все заявки")
 
-# --- Эхо для админа (в самом конце!) ---
-@router.message(lambda message: message.from_user.id == ADMIN_ID)
+# ------------------- Эхо для админа (последний хендлер) -------------------
+@router.message(lambda m: m.from_user.id == ADMIN_ID)
 async def echo_admin(message: Message, state: FSMContext):
     if message.text and message.text.startswith('/'):
         return
@@ -326,17 +364,23 @@ async def echo_admin(message: Message, state: FSMContext):
         return
     await message.answer(f"**Эхо:** {message.text}")
 
-# --- ВЕБ-ПАНЕЛЬ ---
+# ----------------------------------------------------------------------
+# Веб-панель
+# ----------------------------------------------------------------------
 async def login_page(request):
-    return web.Response(text=f"""
-    <h2>Админ-панель TechFix</h2>
-    <p><a href="{LOGIN_URL}" target="_blank">Нажмите сюда, чтобы войти через Telegram</a></p>
-    """, content_type="text/html")
+    return web.Response(
+        text=f"""
+        <h2>Админ-панель TechFix</h2>
+        <p><a href="{LOGIN_URL}" target="_blank">Нажмите сюда, чтобы войти через Telegram</a></p>
+        """,
+        content_type="text/html"
+    )
 
 async def admin_panel(request):
     user_id = request.query.get("user")
     if not user_id or int(user_id) != ADMIN_ID:
         return web.Response(text="Доступ запрещён", status=403)
+
     if not requests_data:
         return web.Response(text="<h2>Нет заявок</h2>", content_type="text/html")
 
@@ -344,12 +388,12 @@ async def admin_panel(request):
     <!DOCTYPE html>
     <html><head><title>Админ-панель</title><meta charset="utf-8">
     <style>
-        body {{font-family: Arial; margin: 40px; background: #f4f4f4;}}
-        h2 {{color: #2c3e50;}} table {{width: 100%; border-collapse: collapse; margin: 20px 0;}}
-        th, td {{border: 1px solid #ddd; padding: 12px; text-align: left;}}
-        th {{background: #3498db; color: white;}}
-        .btn {{padding: 8px 16px; margin: 4px; background: #e74c3c; color: white; text-decoration: none; border-radius: 4px;}}
-        .download {{background: #27ae60;}}
+        body {{font-family: Arial; margin:40px; background:#f4f4f4;}}
+        h2 {{color:#2c3e50;}} table {{width:100%; border-collapse:collapse; margin:20px 0;}}
+        th,td {{border:1px solid #ddd; padding:12px; text-align:left;}}
+        th {{background:#3498db; color:white;}}
+        .btn {{padding:8px 16px; margin:4px; background:#e74c3c; color:white; text-decoration:none; border-radius:4px;}}
+        .download {{background:#27ae60;}}
     </style></head><body>
     <h2>Заявки на ремонт</h2>
     <a href="/download_csv?user={user_id}" class="btn download">Скачать CSV</a>
@@ -362,8 +406,11 @@ async def admin_panel(request):
         for row in reader:
             if len(row) >= 7:
                 rid = row[0]
-                html += f"<tr><td>{rid}</td><td>{row[1]}</td><td>{row[2]}</td><td>{row[3]}</td><td>{row[4]}</td><td>{row[5]}</td><td>{row[6]}</td>"
-                html += f"<td><a href='/delete/{rid}?user={user_id}' class='btn'>Удалить</a></td></tr>"
+                html += (
+                    f"<tr><td>{rid}</td><td>{row[1]}</td><td>{row[2]}</td>"
+                    f"<td>{row[3]}</td><td>{row[4]}</td><td>{row[5]}</td><td>{row[6]}</td>"
+                    f"<td><a href='/delete/{rid}?user={user_id}' class='btn'>Удалить</a></td></tr>"
+                )
     html += "</table></body></html>"
     return web.Response(text=html, content_type="text/html")
 
@@ -371,9 +418,9 @@ async def delete_web(request):
     user_id = request.query.get("user")
     if not user_id or int(user_id) != ADMIN_ID:
         return web.Response(text="Доступ запрещён", status=403)
-    req_id = int(request.match_info['id'])
-    if req_id in requests_data:
-        del requests_data[req_id]
+    rid = int(request.match_info["id"])
+    if rid in requests_data:
+        del requests_data[rid]
         _rewrite_csv()
     return web.HTTPFound(f"/admin?user={user_id}")
 
@@ -383,9 +430,14 @@ async def download_csv_web(request):
         return web.Response(text="Доступ запрещён", status=403)
     if not os.path.exists(CSV_FILE):
         return web.Response(text="Нет заявок", status=404)
-    return web.FileResponse(CSV_FILE, headers={"Content-Disposition": "attachment; filename=repair_requests.csv"})
+    return web.FileResponse(
+        CSV_FILE,
+        headers={"Content-Disposition": "attachment; filename=repair_requests.csv"}
+    )
 
-# --- on_startup ---
+# ----------------------------------------------------------------------
+# on_startup
+# ----------------------------------------------------------------------
 async def on_startup(app: web.Application):
     global LOGIN_URL
     try:
@@ -393,7 +445,7 @@ async def on_startup(app: web.Application):
         LOGIN_URL = f"https://t.me/{me.username}?start=login"
         logging.info(f"LOGIN_URL: {LOGIN_URL}")
     except Exception as e:
-        logging.error(f"Ошибка: {e}")
+        logging.error(f"Не удалось получить username: {e}")
 
     domain = config('AMVERA_APP_DOMAIN', default=None)
     if domain:
@@ -404,10 +456,12 @@ async def on_startup(app: web.Application):
                 logging.info(f"Webhook установлен: {webhook_url}")
                 break
             except Exception as e:
-                logging.warning(f"Попытка {i+1}: {e}")
+                logging.warning(f"Попытка {i+1}/5: {e}")
                 await asyncio.sleep(5)
 
-# --- Запуск ---
+# ----------------------------------------------------------------------
+# Запуск приложения
+# ----------------------------------------------------------------------
 app = web.Application()
 app.router.add_get("/", login_page)
 app.router.add_get("/admin", admin_panel)
@@ -427,4 +481,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logging.info("Бот остановлен")    web.run_app(app, host="0.0.0.0", port=8000)
+        logging.info("Бот остановлен")
