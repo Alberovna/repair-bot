@@ -147,9 +147,12 @@ async def export_csv(message: Message):
 
 # --- Webhook ---
 async def on_startup(app: web.Application):
-    webhook_url = f"https://{AMVERA_DOMAIN}/webhook"
-    await bot.set_webhook(webhook_url)
-    logging.info(f"Webhook: {webhook_url}")
+    webhook_url = f"https://{config('AMVERA_APP_DOMAIN')}/webhook"
+    try:
+        await bot.set_webhook(webhook_url)
+        logging.info(f"Webhook установлен: {webhook_url}")
+    except Exception as e:
+        logging.error(f"Ошибка установки вебхука: {e}")
 
 async def on_shutdown(app: web.Application):
     await bot.delete_webhook()
