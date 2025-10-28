@@ -1,4 +1,3 @@
-# app.py
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.types import Message, FSInputFile
 from aiogram.filters import CommandStart, Command
@@ -22,6 +21,9 @@ AMVERA_DOMAIN = config("AMVERA_APP_DOMAIN", default="localhost")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
+
+# --- Подключаем router ПЕРЕД настройкой webhook ---
+dp.include_router(router)
 
 # --- Путь к CSV в /data ---
 DATA_DIR = "/data"
@@ -135,7 +137,7 @@ async def confirm_no(message: Message, state: FSMContext):
     await message.answer("Хорошо, начнём заново. Как вас зовут?")
     await state.set_state(RepairRequest.name)
 
-# --- ПР 5: /export ---
+# --- /export ---
 @router.message(Command("export"))
 async def export_csv(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -148,8 +150,8 @@ async def export_csv(message: Message):
 
 # --- Webhook ---
 async def on_startup(app: web.Application):
-    logging.info("Ожидание 180 секунд — Amvera просыпается...")
-    await asyncio.sleep(180)  # 3 МИНУТЫ — ГАРАНТИРОВАННО
+    logging.info("Ожидание Amvera (20 сек)...")
+    await asyncio.sleep(20)
     domain = config('AMVERA_APP_DOMAIN')
     if not domain or domain == "localhost":
         logging.error("AMVERA_APP_DOMAIN НЕ ЗАДАН!")
@@ -157,9 +159,10 @@ async def on_startup(app: web.Application):
     webhook_url = f"https://{domain}/webhook"
     try:
         await bot.set_webhook(webhook_url)
-        logging.info(f"WEBHOOK УСПЕШНО: {webhook_url}")
+        logging.info(f"WEBHOOK УСТАНОВЛЕН: {webhook_url}")
     except Exception as e:
         logging.error(f"ОШИБКА ВЕБХУКА: {e}")
+
 async def on_shutdown(app: web.Application):
     try:
         await bot.delete_webhook()
@@ -172,9 +175,9 @@ async def on_shutdown(app: web.Application):
 app = web.Application()
 SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
 setup_application(app, dp, bot=bot)
-dp.include_router(router)
 app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
 
 if __name__ == "__main__":
     web.run_app(app, host="0.0.0.0", port=8000)
+
