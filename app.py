@@ -148,13 +148,13 @@ async def export_csv(message: Message):
 
 # --- Webhook ---
 async def on_startup(app: web.Application):
-    logging.info("Ожидание 20 секунд для инициализации Amvera...")
-    await asyncio.sleep(20)  # Ждём DNS и прокси
+    logging.info("Ждём 30 секунд — Amvera просыпается...")
+    await asyncio.sleep(30)  # КРИТИЧНО ВАЖНО!
     domain = config('AMVERA_APP_DOMAIN')
     webhook_url = f"https://{domain}/webhook"
     try:
         await bot.set_webhook(webhook_url)
-        logging.info(f"WEBHOOK УСПЕШНО: {webhook_url}")
+        logging.info(f"WEBHOOK УСПЕШНО УСТАНОВЛЕН: {webhook_url}")
     except Exception as e:
         logging.error(f"ОШИБКА ВЕБХУКА: {e}")
 
@@ -162,17 +162,18 @@ async def on_shutdown(app: web.Application):
     try:
         await bot.delete_webhook()
         await bot.session.close()
-        logging.info("Webhook удалён, сессия закрыта")
-    except Exception as e:
-        logging.error(f"Ошибка при отключении: {e}")
+        logging.info("WEBHOOK УДАЛЁН")
+    except:
+        pass
+
+app.on_startup.append(on_startup)
+app.on_shutdown.append(on_shutdown)
 
 # --- Запуск ---
 app = web.Application()
 SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
 setup_application(app, dp, bot=bot)
 dp.include_router(router)
-app.on_startup.append(on_startup)
-app.on_shutdown.append(on_shutdown)
 
 if __name__ == "__main__":
     web.run_app(app, host="0.0.0.0", port=8000)
