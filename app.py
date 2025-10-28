@@ -148,13 +148,16 @@ async def export_csv(message: Message):
 
 # --- Webhook ---
 async def on_startup(app: web.Application):
-    logging.info("Ждём 30 секунд — Amvera просыпается...")
-    await asyncio.sleep(30)  # КРИТИЧНО ВАЖНО!
+    logging.info("Ожидание 90 секунд — Amvera полностью просыпается...")
+    await asyncio.sleep(90)  # 90 СЕКУНД — НАДЁЖНО
     domain = config('AMVERA_APP_DOMAIN')
+    if not domain or domain == "localhost":
+        logging.error("AMVERA_APP_DOMAIN НЕ ЗАДАН!")
+        return
     webhook_url = f"https://{domain}/webhook"
     try:
         await bot.set_webhook(webhook_url)
-        logging.info(f"WEBHOOK УСПЕШНО УСТАНОВЛЕН: {webhook_url}")
+        logging.info(f"WEBHOOK УСПЕШНО: {webhook_url}")
     except Exception as e:
         logging.error(f"ОШИБКА ВЕБХУКА: {e}")
 
