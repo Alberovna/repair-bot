@@ -166,14 +166,13 @@ async def on_shutdown(app: web.Application):
     except:
         pass
 
-app.on_startup.append(on_startup)
-app.on_shutdown.append(on_shutdown)
-
 # --- Запуск ---
 app = web.Application()
 SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
 setup_application(app, dp, bot=bot)
 dp.include_router(router)
+app.on_startup.append(on_startup)
+app.on_shutdown.append(on_shutdown)
 
 if __name__ == "__main__":
     web.run_app(app, host="0.0.0.0", port=8000)
