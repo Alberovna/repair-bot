@@ -137,23 +137,42 @@ async def export_csv(message: Message):
     await message.answer_document(FSInputFile(CSV_FILE), caption="Все заявки")
 
 # --- Webhook ---
+sync def wait_for_domain_ready(domain: str, max_retries=10, delay=5):
+    """Пытается подключиться к домену, чтобы убедиться, что он разрешается и отвечает."""
+    webhook_url = f"https://{domain}/webhook"
+    for i in range(max_retries):
+        try:
+            # Проверяем, разрешается ли DNS и принимает ли соединение
+            async with aiohttp.ClientSession() as session:
+                async with session.get(webhook_url, ssl=False, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    # Даже 400/405 — это успех (значит, сервер жив)
+                    logging.info(f"Попытка {i+1}: домен {domain} доступен (статус {resp.status})")
+                    return True
+        except Exception as e:
+            logging.warning(f"Попытка {i+1}: домен {domain} недоступен — {e}")
+            await asyncio.sleep(delay)
+    return False
+
 async def on_startup(app: web.Application):
-    logging.info("Ожидание 300 секунд — Amvera просыпается...")
-    await asyncio.sleep(300)  # 5 МИНУТ — ГАРАНТИРОВАННО!
-    
-    domain = config('AMVERA_APP_DOMAIN')
+    domain = config('AMVERA_APP_DOMAIN', default=None)
+    if not domain or domain == "localhost":
+        logging.error("AMVERA_APP_DOMAIN не задан!")
+        return
+
     logging.info(f"ДОМЕН ИЗ ПЕРЕМЕННОЙ: {domain}")
     
-    if not domain or domain == "localhost":
-        logging.error("AMVERA_APP_DOMAIN НЕ ЗАДАН!")
+    # Ждём, пока домен станет доступен (макс. ~50 сек)
+    ready = await wait_for_domain_ready(domain, max_retries=10, delay=5)
+    if not ready:
+        logging.error("Домен так и не стал доступен. Пропускаем установку webhook.")
         return
-    
+
     webhook_url = f"https://{domain}/webhook"
     try:
         await bot.set_webhook(webhook_url)
-        logging.info(f"WEBHOOK УСПЕШНО: {webhook_url}")
+        logging.info(f"WEBHOOK УСПЕШНО УСТАНОВЛЕН: {webhook_url}")
     except Exception as e:
-        logging.error(f"ОШИБКА ВЕБХУКА: {e}")
+        logging.error(f"ОШИБКА при установке вебхука: {e}")
 
 async def on_shutdown(app: web.Application):
     try:
