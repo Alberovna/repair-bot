@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
+import aiohttp  # ← ДОБАВИЛ!
 from decouple import config
 import csv
 import os
@@ -136,35 +137,32 @@ async def export_csv(message: Message):
         return
     await message.answer_document(FSInputFile(CSV_FILE), caption="Все заявки")
 
-# --- Webhook ---
-sync def wait_for_domain_ready(domain: str, max_retries=10, delay=5):
-    """Пытается подключиться к домену, чтобы убедиться, что он разрешается и отвечает."""
+# --- Проверка доступности домена ---
+async def wait_for_domain_ready(domain: str, max_retries=20, delay=3):
+    """Ждёт, пока домен станет доступен (до 60 сек)."""
     webhook_url = f"https://{domain}/webhook"
     for i in range(max_retries):
         try:
-            # Проверяем, разрешается ли DNS и принимает ли соединение
             async with aiohttp.ClientSession() as session:
-                async with session.get(webhook_url, ssl=False, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                    # Даже 400/405 — это успех (значит, сервер жив)
-                    logging.info(f"Попытка {i+1}: домен {domain} доступен (статус {resp.status})")
+                async with session.get(webhook_url, ssl=True, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    logging.info(f"Домен {domain} доступен! (статус: {resp.status})")
                     return True
         except Exception as e:
-            logging.warning(f"Попытка {i+1}: домен {domain} недоступен — {e}")
+            logging.warning(f"Попытка {i+1}/{max_retries}: домен {domain} недоступен — {e}")
             await asyncio.sleep(delay)
     return False
 
+# --- Webhook ---
 async def on_startup(app: web.Application):
     domain = config('AMVERA_APP_DOMAIN', default=None)
     if not domain or domain == "localhost":
         logging.error("AMVERA_APP_DOMAIN не задан!")
         return
-
     logging.info(f"ДОМЕН ИЗ ПЕРЕМЕННОЙ: {domain}")
-    
-    # Ждём, пока домен станет доступен (макс. ~50 сек)
-    ready = await wait_for_domain_ready(domain, max_retries=10, delay=5)
-    if not ready:
-        logging.error("Домен так и не стал доступен. Пропускаем установку webhook.")
+
+    # Ждём, пока домен станет доступен
+    if not await wait_for_domain_ready(domain):
+        logging.error("Домен недоступен — пропускаем установку webhook.")
         return
 
     webhook_url = f"https://{domain}/webhook"
@@ -183,12 +181,10 @@ async def on_shutdown(app: web.Application):
         pass
 
 # --- Запуск ---
-app = web.Application()  # ← СОЗДАЁМ app ЗДЕСЬ!
+app = web.Application()
 SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
 setup_application(app, dp, bot=bot)
 dp.include_router(router)
-
-# ← ДОБАВЛЯЕМ ХУКИ ПОСЛЕ СОЗДАНИЯ app!
 app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
 
