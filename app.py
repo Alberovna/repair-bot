@@ -16,25 +16,18 @@ import asyncio
 logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = config("BOT_TOKEN")
 ADMIN_ID = config("ADMIN_ID", default=None, cast=int)
-AMVERA_DOMAIN = config("AMVERA_APP_DOMAIN", default="localhost")
-
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 router = Router()
 
-# --- Подключаем router ПЕРЕД настройкой webhook ---
-dp.include_router(router)
-
-# --- Путь к CSV в /data ---
+# --- CSV ---
 DATA_DIR = "/data"
 os.makedirs(DATA_DIR, exist_ok=True)
 CSV_FILE = os.path.join(DATA_DIR, "repair_requests.csv")
 
-# --- Инициализация CSV ---
 if not os.path.exists(CSV_FILE):
-    with open(CSV_FILE, mode='w', encoding='utf-8', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(["Имя", "Телефон", "Тип устройства", "Описание проблемы", "Предпочитаемое время"])
+    with open(CSV_FILE, 'w', encoding='utf-8', newline='') as f:
+        csv.writer(f).writerow(["Имя", "Телефон", "Тип устройства", "Описание проблемы", "Предпочитаемое время"])
 
 # --- Клавиатуры ---
 main_keyboard = ReplyKeyboardMarkup(
@@ -121,15 +114,11 @@ async def get_preferred_time(message: Message, state: FSMContext):
 @router.message(RepairRequest.confirm, F.text == "Да")
 async def confirm_yes(message: Message, state: FSMContext):
     data = await state.get_data()
-    with open(CSV_FILE, mode='a', encoding='utf-8', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow([data['name'], data['phone'], data['device_type'], data['problem_description'], data['preferred_time']])
-    
+    with open(CSV_FILE, 'a', encoding='utf-8', newline='') as f:
+        csv.writer(f).writerow([data['name'], data['phone'], data['device_type'], data['problem_description'], data['preferred_time']])
     await message.answer("Заявка сохранена! Мы свяжемся с вами.", reply_markup=main_keyboard)
-    
     if ADMIN_ID:
         await bot.send_message(ADMIN_ID, f"Новая заявка!\n\n" + "\n".join(f"{k}: {v}" for k, v in data.items()))
-    
     await state.clear()
 
 @router.message(RepairRequest.confirm, F.text == "Нет")
@@ -137,7 +126,6 @@ async def confirm_no(message: Message, state: FSMContext):
     await message.answer("Хорошо, начнём заново. Как вас зовут?")
     await state.set_state(RepairRequest.name)
 
-# --- /export ---
 @router.message(Command("export"))
 async def export_csv(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -150,16 +138,20 @@ async def export_csv(message: Message):
 
 # --- Webhook ---
 async def on_startup(app: web.Application):
-    logging.info("Ожидание Amvera (20 сек)...")
-    await asyncio.sleep(20)
+    logging.info("Ожидание 180 секунд — Amvera просыпается...")
+    await asyncio.sleep(180)
+    
     domain = config('AMVERA_APP_DOMAIN')
+    logging.info(f"ДОМЕН ИЗ ПЕРЕМЕННОЙ: {domain}")
+    
     if not domain or domain == "localhost":
-        logging.error("AMVERA_APP_DOMAIN НЕ ЗАДАН!")
+        logging.error("AMVERA_APP_DOMAIN НЕ ЗАДАН! Добавьте в Environment Variables!")
         return
+    
     webhook_url = f"https://{domain}/webhook"
     try:
         await bot.set_webhook(webhook_url)
-        logging.info(f"WEBHOOK УСТАНОВЛЕН: {webhook_url}")
+        logging.info(f"WEBHOOK УСПЕШНО: {webhook_url}")
     except Exception as e:
         logging.error(f"ОШИБКА ВЕБХУКА: {e}")
 
@@ -175,6 +167,7 @@ async def on_shutdown(app: web.Application):
 app = web.Application()
 SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
 setup_application(app, dp, bot=bot)
+dp.include_router(router)
 app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
 
