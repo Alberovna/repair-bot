@@ -144,25 +144,16 @@ async def on_startup(app: web.Application):
         return
 
     logging.info(f"ДОМЕН: {domain}")
-    logging.info("Ожидание 180 секунд — Amvera просыпается...")
+    logging.info("Ожидание 300 секунд — Amvera просыпается...")
 
-    # Ждём 3 минуты — ГАРАНТИРОВАННО хватит
-    await asyncio.sleep(180)
+    await asyncio.sleep(300)  # 5 МИНУТ — ГАРАНТИРОВАННО!
 
     webhook_url = f"https://{domain}/webhook"
     try:
         await bot.set_webhook(webhook_url)
-        logging.info(f"WEBHOOK УСПЕШНО УСТАНОВЛЕН: {webhook_url}")
+        logging.info(f"WEBHOOK УСПЕШНО: {webhook_url}")
     except Exception as e:
         logging.error(f"ОШИБКА ВЕБХУКА: {e}")
-async def on_shutdown(app: web.Application):
-    try:
-        await bot.delete_webhook()
-        await bot.session.close()
-        logging.info("WEBHOOK УДАЛЁН")
-    except:
-        pass
-
 # --- Запуск ---
 app = web.Application()
 SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
