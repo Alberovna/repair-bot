@@ -148,8 +148,8 @@ async def export_csv(message: Message):
 
 # --- Webhook ---
 async def on_startup(app: web.Application):
-    logging.info("Ожидание 90 секунд — Amvera полностью просыпается...")
-    await asyncio.sleep(90)  # 90 СЕКУНД — НАДЁЖНО
+    logging.info("Ожидание 120 секунд — Amvera полностью просыпается...")
+    await asyncio.sleep(120)  # 120 СЕКУНД — ГАРАНТИРОВАННО
     domain = config('AMVERA_APP_DOMAIN')
     if not domain or domain == "localhost":
         logging.error("AMVERA_APP_DOMAIN НЕ ЗАДАН!")
