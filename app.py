@@ -158,11 +158,22 @@ async def on_startup(app: web.Application):
         return
 
     logging.info(f"ДОМЕН: {domain}")
-    logging.info("Ожидание доступности домена...")
+    logging.info("Ожидание 120 секунд — Amvera просыпается...")
 
+    # Ждём 2 минуты — гарантированно хватит
+    await asyncio.sleep(120)
+
+    # Теперь проверяем доступность
     if not await wait_for_domain_ready(domain):
-        logging.error("Домен не стал доступен — пропускаем вебхук.")
-        return
+        logging.warning("Домен всё ещё недоступен. Пробуем установить вебхук насильно...")
+        webhook_url = f"https://{domain}/webhook"
+        try:
+            await bot.set_webhook(webhook_url)
+            logging.info(f"WEBHOOK УСПЕШНО (насильно): {webhook_url}")
+            return
+        except Exception as e:
+            logging.error(f"Не удалось установить вебхук: {e}")
+            return
 
     webhook_url = f"https://{domain}/webhook"
     try:
