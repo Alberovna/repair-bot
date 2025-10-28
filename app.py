@@ -137,20 +137,6 @@ async def export_csv(message: Message):
         return
     await message.answer_document(FSInputFile(CSV_FILE), caption="Все заявки")
 
-# --- Проверка доступности домена ---
-async def wait_for_domain_ready(domain: str, max_retries=30, delay=2):
-    webhook_url = f"https://{domain}/webhook"
-    for i in range(max_retries):
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(webhook_url, ssl=True, timeout=5) as resp:
-                    logging.info(f"Домен доступен! Статус: {resp.status}")
-                    return True
-        except Exception as e:
-            logging.warning(f"Попытка {i+1}: домен недоступен — {e}")
-            await asyncio.sleep(delay)
-    return False
-
 async def on_startup(app: web.Application):
     domain = config('AMVERA_APP_DOMAIN')
     if not domain or domain == "localhost":
@@ -158,30 +144,17 @@ async def on_startup(app: web.Application):
         return
 
     logging.info(f"ДОМЕН: {domain}")
-    logging.info("Ожидание 120 секунд — Amvera просыпается...")
+    logging.info("Ожидание 180 секунд — Amvera просыпается...")
 
-    # Ждём 2 минуты — гарантированно хватит
-    await asyncio.sleep(120)
-
-    # Теперь проверяем доступность
-    if not await wait_for_domain_ready(domain):
-        logging.warning("Домен всё ещё недоступен. Пробуем установить вебхук насильно...")
-        webhook_url = f"https://{domain}/webhook"
-        try:
-            await bot.set_webhook(webhook_url)
-            logging.info(f"WEBHOOK УСПЕШНО (насильно): {webhook_url}")
-            return
-        except Exception as e:
-            logging.error(f"Не удалось установить вебхук: {e}")
-            return
+    # Ждём 3 минуты — ГАРАНТИРОВАННО хватит
+    await asyncio.sleep(180)
 
     webhook_url = f"https://{domain}/webhook"
     try:
         await bot.set_webhook(webhook_url)
-        logging.info(f"WEBHOOK УСПЕШНО: {webhook_url}")
+        logging.info(f"WEBHOOK УСПЕШНО УСТАНОВЛЕН: {webhook_url}")
     except Exception as e:
         logging.error(f"ОШИБКА ВЕБХУКА: {e}")
-
 async def on_shutdown(app: web.Application):
     try:
         await bot.delete_webhook()
