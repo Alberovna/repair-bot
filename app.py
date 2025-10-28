@@ -132,9 +132,9 @@ async def confirm_no(message: Message, state: FSMContext):
     await message.answer("Хорошо, начнём заново. Как вас зовут?")
     await state.set_state(RepairRequest.name)
 
-@router.message(Command("export"))
-async def export_csv(message: Message):
-    if message.from_user.id != ADMIN_ID:
+@router.message(Command("get_csv"))
+async def cmd_get_csv(message: Message):
+    if message.from_user.id != int(ADMIN_ID):
         await message.answer("Доступ запрещён")
         return
     if not os.path.exists(CSV_FILE):
@@ -176,6 +176,10 @@ SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
 setup_application(app, dp, bot=bot)
 dp.include_router(router)
 app.on_startup.append(on_startup)
+
+@router.message()
+async def echo(message: Message):
+    await message.answer(f"Ваше сообщение: {message.text}")
 
 if __name__ == "__main__":
     web.run_app(app, host="0.0.0.0", port=8000)
