@@ -11,6 +11,7 @@ from decouple import config
 import csv
 import os
 import logging
+import asyncio
 
 # --- Настройка ---
 logging.basicConfig(level=logging.INFO)
@@ -147,12 +148,15 @@ async def export_csv(message: Message):
 
 # --- Webhook ---
 async def on_startup(app: web.Application):
-    webhook_url = f"https://{config('AMVERA_APP_DOMAIN')}/webhook"
+    logging.info("Ожидание 20 секунд для инициализации Amvera...")
+    await asyncio.sleep(20)  # Ждём DNS и прокси
+    domain = config('AMVERA_APP_DOMAIN')
+    webhook_url = f"https://{domain}/webhook"
     try:
         await bot.set_webhook(webhook_url)
-        logging.info(f"Webhook установлен: {webhook_url}")
+        logging.info(f"WEBHOOK УСПЕШНО: {webhook_url}")
     except Exception as e:
-        logging.error(f"Ошибка установки вебхука: {e}")
+        logging.error(f"ОШИБКА ВЕБХУКА: {e}")
 
 async def on_shutdown(app: web.Application):
     try:
