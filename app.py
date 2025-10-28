@@ -155,7 +155,12 @@ async def on_startup(app: web.Application):
         logging.error(f"Ошибка установки вебхука: {e}")
 
 async def on_shutdown(app: web.Application):
-    await bot.delete_webhook()
+    try:
+        await bot.delete_webhook()
+        await bot.session.close()
+        logging.info("Webhook удалён, сессия закрыта")
+    except Exception as e:
+        logging.error(f"Ошибка при отключении: {e}")
 
 # --- Запуск ---
 app = web.Application()
