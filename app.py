@@ -51,7 +51,7 @@ class RepairRequest(StatesGroup):
 # --- Глобальные данные ---
 request_counter = 0
 requests_data = {}
-LOGIN_URL = ""  # Будет заполнено в on_startup
+LOGIN_URL = ""
 
 # --- Загрузка заявок ---
 def load_requests():
@@ -130,7 +130,6 @@ async def get_problem_description(message: Message, state: FSMContext):
                          "Например:\n"
                          "• Завтра после 14:00\n"
                          "• Вечером в будни")
-")
     await state.set_state(RepairRequest.preferred_time)
 
 @router.message(RepairRequest.preferred_time)
