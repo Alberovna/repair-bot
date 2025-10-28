@@ -164,13 +164,14 @@ async def on_shutdown(app: web.Application):
         pass
 
 # --- Запуск ---
-app = web.Application()
+app = web.Application()  # ← СОЗДАЁМ app ЗДЕСЬ!
 SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
 setup_application(app, dp, bot=bot)
 dp.include_router(router)
+
+# ← ДОБАВЛЯЕМ ХУКИ ПОСЛЕ СОЗДАНИЯ app!
 app.on_startup.append(on_startup)
 app.on_shutdown.append(on_shutdown)
 
 if __name__ == "__main__":
     web.run_app(app, host="0.0.0.0", port=8000)
-
