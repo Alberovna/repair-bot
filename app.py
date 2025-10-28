@@ -6,7 +6,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
-import aiohttp  # ← ДОБАВИЛ!
 from decouple import config
 import csv
 import os
@@ -115,7 +114,7 @@ async def get_preferred_time(message: Message, state: FSMContext):
 @router.message(RepairRequest.confirm, F.text == "Да")
 async def confirm_yes(message: Message, state: FSMContext):
     data = await state.get_data()
-    with open(CSV_FILE, 'a', encoding='utf-8', newline='') as f:
+    with OIpen(CSV_FILE, 'a', encoding='utf-8', newline='') as f:
         csv.writer(f).writerow([data['name'], data['phone'], data['device_type'], data['problem_description'], data['preferred_time']])
     await message.answer("Заявка сохранена! Мы свяжемся с вами.", reply_markup=main_keyboard)
     if ADMIN_ID:
@@ -137,6 +136,7 @@ async def export_csv(message: Message):
         return
     await message.answer_document(FSInputFile(CSV_FILE), caption="Все заявки")
 
+# --- Webhook ---
 async def on_startup(app: web.Application):
     domain = config('AMVERA_APP_DOMAIN')
     if not domain or domain == "localhost":
@@ -145,8 +145,7 @@ async def on_startup(app: web.Application):
 
     logging.info(f"ДОМЕН: {domain}")
     logging.info("Ожидание 300 секунд — Amvera просыпается...")
-
-    await asyncio.sleep(300)  # 5 МИНУТ — ГАРАНТИРОВАННО!
+    await asyncio.sleep(300)  # 5 МИНУТ
 
     webhook_url = f"https://{domain}/webhook"
     try:
@@ -154,13 +153,14 @@ async def on_startup(app: web.Application):
         logging.info(f"WEBHOOK УСПЕШНО: {webhook_url}")
     except Exception as e:
         logging.error(f"ОШИБКА ВЕБХУКА: {e}")
+
 # --- Запуск ---
 app = web.Application()
 SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
 setup_application(app, dp, bot=bot)
 dp.include_router(router)
 app.on_startup.append(on_startup)
-app.on_shutdown.append(on_shutdown)
+# УДАЛЕНА СТРОКА: app.on_shutdown.append(on_shutdown)  ← ЭТО БЫЛО ПРИЧИНОЙ!
 
 if __name__ == "__main__":
     web.run_app(app, host="0.0.0.0", port=8000)
