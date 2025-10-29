@@ -366,38 +366,17 @@ async def login_page(request):
         <style>
             body {{font-family: Arial; margin:40px; background:#f4f4f4; text-align:center;}}
             a {{padding:12px 24px; background:#3498db; color:white; text-decoration:none; border-radius:6px; font-size:18px;}}
-            .loading {{margin-top:20px; color:#7f8c8d;}}
         </style></head><body>
         <h2>Админ-панель TechFix</h2>
         <p><a href="{LOGIN_URL}" target="_blank">Нажмите, чтобы войти через Telegram</a></p>
-        <p class="loading" id="status">Ожидание входа... (обновляется автоматически)</p>
-        <script>
-            let interval = setInterval(() => {{
-                fetch(window.location.href)
-                    .then(r => r.text())
-                    .then(html => {{
-                        if (!html.includes("Нажмите, чтобы войти")) {{
-                            clearInterval(interval);
-                            document.getElementById("status").innerText = "Вход выполнен! Перенаправление...";
-                            setTimeout(() => {{
-                                const params = new URLSearchParams(window.location.search);
-                                const user = params.get("user");
-                                if (user) {{
-                                    location.href = "/admin?user=" + user;
-                                }} else {{
-                                    location.reload();
-                                }}
-                            }}, 1000);
-                        }}
-                    }})
-                    .catch(() => {{}});
-            }}, 2000);
-        </script>
+        <p style="color:#7f8c8d; margin-top:20px;">
+            После подтверждения в Telegram — <strong>нажмите F5</strong> или обновите страницу
+        </p>
         </body></html>
         """,
         content_type="text/html"
     )
-
+    
 async def admin_panel(request):
     user_id = request.query.get("user")
     if not user_id or int(user_id) != ADMIN_ID:
