@@ -127,13 +127,21 @@ async def cmd_start(message: Message, state: FSMContext):
     args = message.text.strip().split(maxsplit=1)
     if len(args) > 1 and "login" in args[1].lower():
         if message.from_user.id == ADMIN_ID:
-            await message.answer("Вход подтверждён! Можете закрыть это окно.")
+            domain = "tehnobot-miyassarova110604.amvera.io"
+            redirect_url = f"https://{domain}/?user={message.from_user.id}"
+            await message.answer(
+                f"Вход подтверждён!\n\n"
+                f"<a href='{redirect_url}'>Нажмите сюда → войти в панель</a>\n\n"
+                f"Или просто обновите страницу (F5)",
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
         else:
             await message.answer("Доступ запрещён")
         return
 
     await message.answer(
-        "Привет! Добро пожаловать в **сервисный центр «TechFix»**!\n\n"
+        "Привет! Добро пожаловать в сервисный центр «TechFix»!\n\n"
         "Я помогу вам оформить заявку на ремонт.\n\n"
         "Выберите действие:",
         reply_markup=main_keyboard
@@ -141,16 +149,16 @@ async def cmd_start(message: Message, state: FSMContext):
 
 @router.message(F.text == "Заявка на ремонт")
 async def start_request(message: Message, state: FSMContext):
-    await message.answer("**Как вас зовут?**", reply_markup=ReplyKeyboardRemove())
+    await message.answer("Как вас зовут?", reply_markup=ReplyKeyboardRemove())
     await state.set_state(RepairRequest.name)
 
 @router.message(F.text == "Контакты")
 async def show_contacts(message: Message):
     await message.answer(
-        "**Наши контакты:**\n\n"
-        "Адрес: **ул. Техническая, 10**\n"
-        "Телефон: **+7 (123) 456-78-90**\n"
-        "Часы работы: **Пн–Пт: 10:00–19:00**\n\n"
+        "Наши контакты:\n\n"
+        "Адрес: ул. Техническая, 10\n"
+        "Телефон: +7 (123) 456-78-90\n"
+        "Часы работы: Пн–Пт: 10:00–19:00\n\n"
         "Мы всегда рады помочь!",
         reply_markup=main_keyboard
     )
@@ -171,7 +179,7 @@ async def get_name(message: Message, state: FSMContext):
         return
     await state.update_data(name=name)
     await message.answer(
-        "**Отлично!**\n\nВведите ваш **номер телефона**:\n\n"
+        "Отлично! \n\nВведите ваш **номер телефона:\n\n"
         "Формат: `+79123456789` или `89123456789`"
     )
     await state.set_state(RepairRequest.phone)
@@ -181,13 +189,13 @@ async def get_phone(message: Message, state: FSMContext):
     phone = message.text.strip()
     if not is_valid_phone(phone):
         await message.answer(
-            "**Неверный формат!**\n\nПримеры:\n`+79123456789`\n`89123456789`"
+            "Неверный формат! \n\nПримеры:\n+79123456789 \n89123456789"
         )
         return
     await state.update_data(phone=phone)
     await message.answer(
-        "**Какое устройство нужно починить?**\n\n"
-        "Например: *смартфон Samsung*, *ноутбук Lenovo*"
+        "Какое устройство нужно починить?\n\n"
+        "Например: смартфон Samsung, ноутбук Lenovo"
     )
     await state.set_state(RepairRequest.device_type)
 
@@ -195,7 +203,7 @@ async def get_phone(message: Message, state: FSMContext):
 async def get_device_type(message: Message, state: FSMContext):
     await state.update_data(device_type=message.text.strip())
     await message.answer(
-        "**Опишите проблему подробно:**\n\n"
+        "Опишите проблему подробно:\n\n"
         "Например:\n"
         "• Не включается\n"
         "• Разбит экран\n"
@@ -207,7 +215,7 @@ async def get_device_type(message: Message, state: FSMContext):
 async def get_problem_description(message: Message, state: FSMContext):
     await state.update_data(problem_description=message.text.strip())
     await message.answer(
-        "**Когда вам удобно принять звонок?**\n\n"
+        "Когда вам удобно принять звонок?\n\n"
         "Например:\n"
         "• Завтра после 14:00\n"
         "• Вечером в будни"
@@ -219,13 +227,13 @@ async def get_preferred_time(message: Message, state: FSMContext):
     await state.update_data(preferred_time=message.text.strip())
     data = await state.get_data()
     text = (
-        "**Проверьте вашу заявку:**\n\n"
-        f"**Имя:** {data['name']}\n"
-        f"**Телефон:** `{data['phone']}`\n"
-        f"**Устройство:** {data['device_type']}\n"
-        f"**Проблема:** {data['problem_description']}\n"
-        f"**Время звонка:** {data['preferred_time']}\n\n"
-        "**Всё верно?**"
+        "Проверьте вашу заявку:\n\n"
+        f"Имя: {data['name']}\n"
+        f"Телефон: `{data['phone']}`\n"
+        f"Устройство: {data['device_type']}\n"
+        f"Проблема: {data['problem_description']}\n"
+        f"Время звонка: {data['preferred_time']}\n\n"
+        "Всё верно?"
     )
     await message.answer(text, reply_markup=confirm_keyboard)
     await state.set_state(RepairRequest.confirm)
@@ -252,13 +260,13 @@ async def confirm_yes(message: Message, state: FSMContext):
     )
     if ADMIN_ID:
         admin_text = (
-            f"**НОВАЯ ЗАЯВКА #{request_counter}**\n\n"
-            f"**Имя:** {data['name']}\n"
-            f"**Телефон:** `{data['phone']}`\n"
-            f"**Устройство:** {data['device_type']}\n"
-            f"**Проблема:** {data['problem_description']}\n"
-            f"**Время:** {data['preferred_time']}\n"
-            f"**Создано:** {created_at}"
+            f"НОВАЯ ЗАЯВКА #{request_counter}\n\n"
+            f"Имя: {data['name']}\n"
+            f"Телефон: {data['phone']} \n"
+            f"Устройство: {data['device_type']}\n"
+            f"Проблема: {data['problem_description']}\n"
+            f"Время: {data['preferred_time']}\n"
+            f"Создано: {created_at}"
         )
         await bot.send_message(ADMIN_ID, admin_text)
     await state.clear()
@@ -266,7 +274,7 @@ async def confirm_yes(message: Message, state: FSMContext):
 @router.message(RepairRequest.confirm, F.text == "Нет")
 async def confirm_no(message: Message, state: FSMContext):
     await message.answer(
-        "**Хорошо, давайте исправим!**\n\n**Как вас зовут?**",
+        "Хорошо, давайте исправим! \n\n Как вас зовут? ",
         reply_markup=ReplyKeyboardRemove()
     )
     await state.set_state(RepairRequest.name)
