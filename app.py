@@ -34,7 +34,6 @@ router = Router()
 DATA_DIR = "/data"
 os.makedirs(DATA_DIR, exist_ok=True)
 CSV_FILE = os.path.join(DATA_DIR, "repair_requests.csv")
-
 if not os.path.exists(CSV_FILE):
     with open(CSV_FILE, 'w', encoding='utf-8', newline='') as f:
         csv.writer(f).writerow(
@@ -52,7 +51,6 @@ main_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True,
     one_time_keyboard=False
 )
-
 confirm_keyboard = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="Да"), KeyboardButton(text="Нет")]],
     resize_keyboard=True,
@@ -75,7 +73,7 @@ class RepairRequest(StatesGroup):
 # ----------------------------------------------------------------------
 request_counter = 0
 requests_data: dict[int, list[str]] = {}
-LOGIN_URL = "https://t.me/твой_бот?start=login"   # fallback
+LOGIN_URL = "https://t.me/placeholder_bot?start=login"  # будет переопределён
 
 # ----------------------------------------------------------------------
 # Загрузка заявок из CSV
@@ -86,14 +84,13 @@ def load_requests() -> None:
     if os.path.exists(CSV_FILE):
         with open(CSV_FILE, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
-            next(reader, None)                     # пропуск заголовка
+            next(reader, None)
             for row in reader:
                 if len(row) >= 6 and row[0].isdigit():
                     rid = int(row[0])
                     requests_data[rid] = row[1:6]
                     request_counter = max(request_counter, rid)
     request_counter = max(requests_data.keys(), default=0)
-
 load_requests()
 
 # ----------------------------------------------------------------------
@@ -104,7 +101,7 @@ def is_valid_phone(phone: str) -> bool:
     return bool(re.fullmatch(r"\+?\d{10,15}", cleaned)) and len(cleaned.lstrip('+')) >= 10
 
 # ----------------------------------------------------------------------
-# Перезапись CSV (используется при удалении)
+# Перезапись CSV
 # ----------------------------------------------------------------------
 def _rewrite_csv() -> None:
     tmp_file = CSV_FILE + ".tmp"
@@ -112,7 +109,6 @@ def _rewrite_csv() -> None:
         writer = csv.writer(tf)
         writer.writerow(["ID", "Имя", "Телефон", "Устройство", "Проблема", "Время", "Дата создания"])
         for rid, data in sorted(requests_data.items()):
-            # ищем дату создания в текущем файле
             created = "Неизвестно"
             if os.path.exists(CSV_FILE):
                 with open(CSV_FILE, 'r', encoding='utf-8') as rf:
@@ -131,9 +127,7 @@ async def cmd_start(message: Message, state: FSMContext):
     args = message.text.strip().split(maxsplit=1)
     if len(args) > 1 and "login" in args[1].lower():
         if message.from_user.id == ADMIN_ID:
-            domain = config('AMVERA_APP_DOMAIN', '')
-            url = f"https://{domain}/admin?user={message.from_user.id}"
-            await message.answer(f"Вы вошли!\nПерейдите: {url}")
+            await message.answer("Вход подтверждён! Можете закрыть это окно.")
         else:
             await message.answer("Доступ запрещён")
         return
@@ -248,17 +242,14 @@ async def confirm_yes(message: Message, state: FSMContext):
         data['preferred_time'], created_at
     ]
     requests_data[request_counter] = row[1:6]
-
     with open(CSV_FILE, 'a', encoding='utf-8', newline='') as f:
         csv.writer(f).writerow(row)
-
     await message.answer(
         "**Заявка успешно отправлена!**\n\n"
         "Мы свяжемся с вами в указанное время.\n"
         "Спасибо за доверие!",
         reply_markup=main_keyboard
     )
-
     if ADMIN_ID:
         admin_text = (
             f"**НОВАЯ ЗАЯВКА #{request_counter}**\n\n"
@@ -270,7 +261,6 @@ async def confirm_yes(message: Message, state: FSMContext):
             f"**Создано:** {created_at}"
         )
         await bot.send_message(ADMIN_ID, admin_text)
-
     await state.clear()
 
 @router.message(RepairRequest.confirm, F.text == "Нет")
@@ -290,7 +280,6 @@ async def cmd_admin(message: Message):
     if not requests_data:
         await message.answer("Нет заявок", reply_markup=main_keyboard)
         return
-
     kb = InlineKeyboardMarkup(inline_keyboard=[])
     for rid, data in sorted(requests_data.items()):
         kb.inline_keyboard.append([
@@ -306,7 +295,6 @@ async def view_request(callback: CallbackQuery):
     if not data:
         await callback.answer("Заявка не найдена", show_alert=True)
         return
-
     created = "Неизвестно"
     if os.path.exists(CSV_FILE):
         with open(CSV_FILE, 'r', encoding='utf-8') as f:
@@ -314,7 +302,6 @@ async def view_request(callback: CallbackQuery):
                 if row and len(row) >= 7 and row[0] == str(rid):
                     created = row[6]
                     break
-
     text = (
         f"**Заявка #{rid}**\n\n"
         f"**Имя:** {data[0]}\n"
@@ -337,7 +324,7 @@ async def delete_request(callback: CallbackQuery):
             f"**Заявка #{rid} удалена**",
             reply_markup=None
         )
-        await cmd_admin(callback.message)   # обновляем панель
+        await cmd_admin(callback.message)
     else:
         await callback.answer("Заявка не найдена", show_alert=True)
 
@@ -353,7 +340,7 @@ async def cmd_get_csv(message: Message):
         file = BufferedInputFile(f.read(), filename="repair_requests.csv")
     await message.answer_document(file, caption="Все заявки")
 
-# ------------------- Эхо для админа (последний хендлер) -------------------
+# ------------------- Эхо для админа -------------------
 @router.message(lambda m: m.from_user.id == ADMIN_ID)
 async def echo_admin(message: Message, state: FSMContext):
     if message.text and message.text.startswith('/'):
@@ -368,10 +355,26 @@ async def echo_admin(message: Message, state: FSMContext):
 # Веб-панель
 # ----------------------------------------------------------------------
 async def login_page(request):
+    user_id = request.query.get("user")
+    if user_id and int(user_id) == ADMIN_ID:
+        raise web.HTTPFound(f"/admin?user={user_id}")
+
     return web.Response(
         text=f"""
+        <!DOCTYPE html>
+        <html><head><title>TechFix — Вход</title><meta charset="utf-8">
+        <style>
+            body {{font-family: Arial; margin:40px; background:#f4f4f4; text-align:center;}}
+            a {{padding:12px 24px; background:#3498db; color:white; text-decoration:none; border-radius:6px; font-size:18px;}}
+            .loading {{margin-top:20px; color:#7f8c8d;}}
+        </style></head><body>
         <h2>Админ-панель TechFix</h2>
-        <p><a href="{LOGIN_URL}" target="_blank">Нажмите сюда, чтобы войти через Telegram</a></p>
+        <p><a href="{LOGIN_URL}" target="_blank">Нажмите, чтобы войти через Telegram</a></p>
+        <p class="loading">Ожидание входа... (обновляется автоматически)</p>
+        <script>
+            setInterval(() => location.reload(), 3000);
+        </script>
+        </body></html>
         """,
         content_type="text/html"
     )
@@ -380,7 +383,6 @@ async def admin_panel(request):
     user_id = request.query.get("user")
     if not user_id or int(user_id) != ADMIN_ID:
         return web.Response(text="Доступ запрещён", status=403)
-
     if not requests_data:
         return web.Response(text="<h2>Нет заявок</h2>", content_type="text/html")
 
@@ -443,24 +445,21 @@ async def on_startup(app: web.Application):
     try:
         me = await bot.get_me()
         LOGIN_URL = f"https://t.me/{me.username}?start=login"
-        logging.info(f"LOGIN_URL: {LOGIN_URL}")
+        logging.info(f"Bot: @{me.username} | Login URL: {LOGIN_URL}")
     except Exception as e:
-        logging.error(f"Не удалось получить username: {e}")
-
-    domain = config('AMVERA_APP_DOMAIN', default=None)
-    if domain:
-        webhook_url = f"https://{domain}/webhook"
-        for i in range(5):
-            try:
-                await bot.set_webhook(webhook_url)
-                logging.info(f"Webhook установлен: {webhook_url}")
-                break
-            except Exception as e:
-                logging.warning(f"Попытка {i+1}/5: {e}")
-                await asyncio.sleep(5)
+        logging.error(f"Ошибка получения username: {e}")
 
 # ----------------------------------------------------------------------
-# Запуск приложения
+# Запуск (polling для разработки)
+# ----------------------------------------------------------------------
+async def main():
+    await on_startup(app)
+    await bot.delete_webhook(drop_pending_updates=True)
+    logging.info("Запуск в режиме polling...")
+    await dp.start_polling(bot)
+
+# ----------------------------------------------------------------------
+# Веб-сервер (для веб-панели)
 # ----------------------------------------------------------------------
 app = web.Application()
 app.router.add_get("/", login_page)
@@ -468,14 +467,8 @@ app.router.add_get("/admin", admin_panel)
 app.router.add_get("/delete/{id}", delete_web)
 app.router.add_get("/download_csv", download_csv_web)
 
-SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
-setup_application(app, dp, bot=bot)
+# Регистрация роутера
 dp.include_router(router)
-app.on_startup.append(on_startup)
-
-async def main():
-    await on_startup(app)
-    await web._run_app(app, host="0.0.0.0", port=8000)
 
 if __name__ == "__main__":
     try:
