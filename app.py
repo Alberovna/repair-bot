@@ -372,18 +372,26 @@ async def login_page(request):
         <p><a href="{LOGIN_URL}" target="_blank">Нажмите, чтобы войти через Telegram</a></p>
         <p class="loading" id="status">Ожидание входа... (обновляется автоматически)</p>
         <script>
-            let interval = setInterval(() => {
+            let interval = setInterval(() => {{
                 fetch(window.location.href)
                     .then(r => r.text())
-                    .then(html => {
-                        if (!html.includes("Нажмите, чтобы войти")) {
+                    .then(html => {{
+                        if (!html.includes("Нажмите, чтобы войти")) {{
                             clearInterval(interval);
                             document.getElementById("status").innerText = "Вход выполнен! Перенаправление...";
-                            setTimeout(() => location.href = "/admin?user=" + new URLSearchParams(window.location.search).get("user"), 1000);
-                        }
-                    })
-                    .catch(() => {});
-            }, 2000);
+                            setTimeout(() => {{
+                                const params = new URLSearchParams(window.location.search);
+                                const user = params.get("user");
+                                if (user) {{
+                                    location.href = "/admin?user=" + user;
+                                }} else {{
+                                    location.reload();
+                                }}
+                            }}, 1000);
+                        }}
+                    }})
+                    .catch(() => {{}});
+            }}, 2000);
         </script>
         </body></html>
         """,
