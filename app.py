@@ -450,16 +450,7 @@ async def on_startup(app: web.Application):
         logging.error(f"Ошибка получения username: {e}")
 
 # ----------------------------------------------------------------------
-# Запуск (polling для разработки)
-# ----------------------------------------------------------------------
-async def main():
-    await on_startup(app)
-    await bot.delete_webhook(drop_pending_updates=True)
-    logging.info("Запуск в режиме polling...")
-    await dp.start_polling(bot)
-
-# ----------------------------------------------------------------------
-# Веб-сервер (для веб-панели)
+# Веб-приложение
 # ----------------------------------------------------------------------
 app = web.Application()
 app.router.add_get("/", login_page)
@@ -467,11 +458,28 @@ app.router.add_get("/admin", admin_panel)
 app.router.add_get("/delete/{id}", delete_web)
 app.router.add_get("/download_csv", download_csv_web)
 
-# Регистрация роутера
+# Регистрация webhook
+SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path="/webhook")
+setup_application(app, dp, bot=bot)
+
+# Включаем роутер
 dp.include_router(router)
 
+# ----------------------------------------------------------------------
+# Запуск — ТОЛЬКО webhook
+# ----------------------------------------------------------------------
+import os
+
+async def main():
+    await on_startup(app)
+    
+    port = int(os.environ.get("PORT", 8000))
+    webhook_url = f"https://tehnobot-miyassarova110604.amvera.io/webhook"
+    
+    await bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+    logging.info(f"Webhook установлен: {webhook_url}")
+    
+    await web._run_app(app, host="0.0.0.0", port=port)
+
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logging.info("Бот остановлен")
+    asyncio.run(main())
