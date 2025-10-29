@@ -370,9 +370,20 @@ async def login_page(request):
         </style></head><body>
         <h2>Админ-панель TechFix</h2>
         <p><a href="{LOGIN_URL}" target="_blank">Нажмите, чтобы войти через Telegram</a></p>
-        <p class="loading">Ожидание входа... (обновляется автоматически)</p>
+        <p class="loading" id="status">Ожидание входа... (обновляется автоматически)</p>
         <script>
-            setInterval(() => location.reload(), 3000);
+            let interval = setInterval(() => {
+                fetch(window.location.href)
+                    .then(r => r.text())
+                    .then(html => {
+                        if (!html.includes("Нажмите, чтобы войти")) {
+                            clearInterval(interval);
+                            document.getElementById("status").innerText = "Вход выполнен! Перенаправление...";
+                            setTimeout(() => location.href = "/admin?user=" + new URLSearchParams(window.location.search).get("user"), 1000);
+                        }
+                    })
+                    .catch(() => {});
+            }, 2000);
         </script>
         </body></html>
         """,
